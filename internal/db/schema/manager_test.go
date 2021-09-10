@@ -1,17 +1,21 @@
-package schema
+package schema_test
 
 import (
 	"context"
 	"database/sql"
 	"sort"
-	"strings"
 	"testing"
 
-	"github.com/hashicorp/boundary/internal/db/schema/postgres"
+	"github.com/hashicorp/boundary/internal/db/schema"
+	"github.com/hashicorp/boundary/internal/db/schema/internal/edition"
+
 	"github.com/hashicorp/boundary/internal/errors"
 	"github.com/hashicorp/boundary/testing/dbtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	// import for init side-effects to include migrations
+	_ "github.com/hashicorp/boundary/internal/db/schema/migrations/oss"
 )
 
 func TestNewManager(t *testing.T) {
@@ -26,13 +30,13 @@ func TestNewManager(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = NewManager(ctx, dialect, d)
+	_, err = schema.NewManager(ctx, dialect, d)
 	require.NoError(t, err)
-	_, err = NewManager(ctx, "unknown", d)
+	_, err = schema.NewManager(ctx, "unknown", d)
 	assert.True(t, errors.Match(errors.T(errors.InvalidParameter), err))
 
 	d.Close()
-	_, err = NewManager(ctx, dialect, d)
+	_, err = schema.NewManager(ctx, dialect, d)
 	assert.True(t, errors.Match(errors.T(errors.Op("schema.NewManager")), err))
 }
 
@@ -50,32 +54,54 @@ func TestCurrentState(t *testing.T) {
 	d, err := sql.Open(dialect, u)
 	require.NoError(t, err)
 
-	m, err := NewManager(ctx, dialect, d)
+	m, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
+		[]edition.Edition{
+			{
+				Name:          "oss",
+				Dialect:       schema.Postgres,
+				LatestVersion: 2,
+				Migrations: map[int][]byte{
+					2: []byte(`select 1`),
+				},
+				Priority: 0,
+			},
+		},
+	))
 	require.NoError(t, err)
-	want := &State{
-		BinarySchemaVersion:   BinarySchemaVersion(dialect),
-		DatabaseSchemaVersion: nilVersion,
+	want := &schema.State{
+		Editions: []schema.EditionState{
+			{
+				Name:                  "oss",
+				BinarySchemaVersion:   2,
+				DatabaseSchemaVersion: schema.NilVersion,
+				DatabaseSchemaState:   schema.Behind,
+			},
+		},
 	}
 	s, err := m.CurrentState(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, want, s)
 
-	testDriver, err := postgres.New(ctx, d)
-	require.NoError(t, err)
-	require.NoError(t, testDriver.EnsureVersionTable(ctx))
-	require.NoError(t, testDriver.Run(ctx, strings.NewReader("select 1"), 2))
+	assert.NoError(t, m.ApplyMigrations(ctx))
 
-	want = &State{
-		InitializationStarted: true,
-		BinarySchemaVersion:   BinarySchemaVersion(dialect),
-		DatabaseSchemaVersion: 2,
+	want = &schema.State{
+		Initialized: true,
+		Editions: []schema.EditionState{
+			{
+				Name:                  "oss",
+				BinarySchemaVersion:   2,
+				DatabaseSchemaVersion: 2,
+				DatabaseSchemaState:   schema.Equal,
+			},
+		},
 	}
 	s, err = m.CurrentState(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, want, s)
+	assert.True(t, s.MigrationsApplied())
 }
 
-func TestRollForward(t *testing.T) {
+func TestApplyMigrations(t *testing.T) {
 	dialect := dbtest.Postgres
 
 	c, u, _, err := dbtest.StartUsingTemplate(dialect)
@@ -87,25 +113,13 @@ func TestRollForward(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	m, err := NewManager(ctx, dialect, d)
+	m, err := schema.NewManager(ctx, dialect, d)
 	require.NoError(t, err)
-	assert.NoError(t, m.RollForward(ctx))
-
-	// Now set to dirty at an early version
-	_, err = postgres.New(ctx, d)
-	require.NoError(t, err)
-	// TODO: Extract out a way to mock the db to test failing rollforwards.
-	_, err = d.ExecContext(ctx, "TRUNCATE boundary_schema_version; INSERT INTO boundary_schema_version (version, dirty) VALUES (2, true)")
-	require.NoError(t, err)
-	assert.Error(t, m.RollForward(ctx))
+	assert.NoError(t, m.ApplyMigrations(ctx))
 }
 
-func TestRollForward_NotFromFresh(t *testing.T) {
+func TestApplyMigrations_NotFromFresh(t *testing.T) {
 	dialect := dbtest.Postgres
-	oState := migrationStates[dialect]
-
-	nState := createPartialMigrationState(oState, 8)
-	migrationStates[dialect] = nState
 
 	c, u, _, err := dbtest.StartUsingTemplate(dialect, dbtest.WithTemplate(dbtest.Template1))
 	require.NoError(t, err)
@@ -117,28 +131,49 @@ func TestRollForward_NotFromFresh(t *testing.T) {
 
 	// Initialize the DB with only a portion of the current sql scripts.
 	ctx := context.Background()
-	m, err := NewManager(ctx, dialect, d)
+	m, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
+		schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": 1}),
+	))
 	require.NoError(t, err)
-	assert.NoError(t, m.RollForward(ctx))
+	assert.NoError(t, m.ApplyMigrations(ctx))
 
 	state, err := m.CurrentState(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, nState.binarySchemaVersion, state.DatabaseSchemaVersion)
-	assert.False(t, state.Dirty)
+	want := &schema.State{
+		Initialized: true,
+		Editions: []schema.EditionState{
+			{
+				Name:                  "oss",
+				BinarySchemaVersion:   1,
+				DatabaseSchemaVersion: 1,
+				DatabaseSchemaState:   schema.Equal,
+			},
+		},
+	}
+	assert.Equal(t, want, state)
 
-	// Restore the full set of sql scripts and roll the rest of the way forward.
-	migrationStates[dialect] = oState
-
-	newM, err := NewManager(ctx, dialect, d)
+	newM, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
+		schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": 3}),
+	))
 	require.NoError(t, err)
-	assert.NoError(t, newM.RollForward(ctx))
+	assert.NoError(t, newM.ApplyMigrations(ctx))
 	state, err = newM.CurrentState(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, oState.binarySchemaVersion, state.DatabaseSchemaVersion)
-	assert.False(t, state.Dirty)
+	want = &schema.State{
+		Initialized: true,
+		Editions: []schema.EditionState{
+			{
+				Name:                  "oss",
+				BinarySchemaVersion:   3,
+				DatabaseSchemaVersion: 3,
+				DatabaseSchemaState:   schema.Equal,
+			},
+		},
+	}
+	assert.Equal(t, want, state)
 }
 
-func TestRunMigration_canceledContext(t *testing.T) {
+func TestApplyMigration_canceledContext(t *testing.T) {
 	dialect := dbtest.Postgres
 
 	c, u, _, err := dbtest.StartUsingTemplate(dialect)
@@ -150,24 +185,16 @@ func TestRunMigration_canceledContext(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	m, err := NewManager(ctx, dialect, d)
+	m, err := schema.NewManager(ctx, dialect, d)
 	require.NoError(t, err)
 
-	// TODO: Find a way to test different parts of the runMigrations loop.
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
-	assert.Error(t, m.runMigrations(ctx, newStatementProvider(dialect, 0)))
+	assert.Error(t, m.ApplyMigrations(ctx))
 }
 
-func TestRollForward_BadSQL(t *testing.T) {
+func TestApplyMigrations_BadSQL(t *testing.T) {
 	dialect := dbtest.Postgres
-	oState := migrationStates[dialect]
-	defer func() { migrationStates[dialect] = oState }()
-
-	nState := createPartialMigrationState(oState, 8)
-	nState.binarySchemaVersion = 10
-	nState.upMigrations[10] = []byte("SELECT 1 FROM NonExistantTable;")
-	migrationStates[dialect] = nState
 
 	c, u, _, err := dbtest.StartUsingTemplate(dialect, dbtest.WithTemplate(dbtest.Template1))
 	require.NoError(t, err)
@@ -179,14 +206,37 @@ func TestRollForward_BadSQL(t *testing.T) {
 
 	// Initialize the DB with only a portion of the current sql scripts.
 	ctx := context.Background()
-	m, err := NewManager(ctx, dialect, d)
+	m, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
+		[]edition.Edition{
+			{
+				Name:          "oss",
+				Dialect:       schema.Postgres,
+				LatestVersion: 1,
+				Migrations: map[int][]byte{
+					1: []byte(`select 1 from nonexistanttable;`),
+				},
+				Priority: 0,
+			},
+		},
+	))
 	require.NoError(t, err)
-	assert.Error(t, m.RollForward(ctx))
+	assert.Error(t, m.ApplyMigrations(ctx))
 
 	state, err := m.CurrentState(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, nilVersion, state.DatabaseSchemaVersion)
-	assert.False(t, state.Dirty)
+	want := &schema.State{
+		Initialized: false,
+		Editions: []schema.EditionState{
+			{
+				Name:                  "oss",
+				BinarySchemaVersion:   1,
+				DatabaseSchemaVersion: schema.NilVersion,
+				DatabaseSchemaState:   schema.Behind,
+			},
+		},
+	}
+	assert.Equal(t, want, state)
+	assert.False(t, state.MigrationsApplied())
 }
 
 func TestManager_ExclusiveLock(t *testing.T) {
@@ -200,12 +250,12 @@ func TestManager_ExclusiveLock(t *testing.T) {
 	})
 	d1, err := sql.Open(dialect, u)
 	require.NoError(t, err)
-	m1, err := NewManager(ctx, dialect, d1)
+	m1, err := schema.NewManager(ctx, dialect, d1)
 	require.NoError(t, err)
 
 	d2, err := sql.Open(dialect, u)
 	require.NoError(t, err)
-	m2, err := NewManager(ctx, dialect, d2)
+	m2, err := schema.NewManager(ctx, dialect, d2)
 	require.NoError(t, err)
 
 	assert.NoError(t, m1.ExclusiveLock(ctx))
@@ -223,14 +273,14 @@ func TestManager_SharedLock(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, c())
 	})
-	d1, err := sql.Open("postgres", u)
+	d1, err := sql.Open(dialect, u)
 	require.NoError(t, err)
-	m1, err := NewManager(ctx, "postgres", d1)
+	m1, err := schema.NewManager(ctx, dialect, d1)
 	require.NoError(t, err)
 
-	d2, err := sql.Open("postgres", u)
+	d2, err := sql.Open(dialect, u)
 	require.NoError(t, err)
-	m2, err := NewManager(ctx, "postgres", d2)
+	m2, err := schema.NewManager(ctx, dialect, d2)
 	require.NoError(t, err)
 
 	assert.NoError(t, m1.SharedLock(ctx))
@@ -252,22 +302,21 @@ func Test_GetMigrationLog(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, c())
 	})
-	d, err := sql.Open("postgres", u)
+	d, err := sql.Open(dialect, u)
 	require.NoError(t, err)
-	m, err := NewManager(ctx, "postgres", d)
+	m, err := schema.NewManager(ctx, dialect, d)
 	require.NoError(t, err)
-	require.NoError(t, m.RollForward(ctx))
+	require.NoError(t, m.ApplyMigrations(ctx))
 
-	const insert = `insert into log_migration(entry) values ($1)`
+	const insert = `insert into log_migration(entry, edition) values ($1, $2)`
 	createEntries := func(entries ...string) {
 		for _, e := range entries {
-			_, err := d.Exec(insert, e)
+			_, err := d.Exec(insert, e, "oss")
 			require.NoError(t, err)
 		}
 	}
 	tests := []struct {
 		name          string
-		d             *sql.DB
 		setup         func()
 		withDeleteLog bool
 		wantEntries   []string
@@ -275,20 +324,14 @@ func Test_GetMigrationLog(t *testing.T) {
 	}{
 		{
 			name:        "simple",
-			d:           d,
 			setup:       func() { createEntries("alice", "eve", "bob") },
 			wantEntries: []string{"alice", "eve", "bob"},
 		},
 		{
 			name:          "with-delete-log",
-			d:             d,
 			setup:         func() { createEntries("alice", "eve", "bob") },
 			withDeleteLog: true,
 			wantEntries:   []string{"alice", "eve", "bob"},
-		},
-		{
-			name:         "missing-sql-DB",
-			wantErrMatch: errors.T(errors.InvalidParameter),
 		},
 	}
 	for _, tt := range tests {
@@ -302,7 +345,7 @@ func Test_GetMigrationLog(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup()
 			}
-			gotLog, err := GetMigrationLog(ctx, tt.d, WithDeleteLog(tt.withDeleteLog))
+			gotLog, err := m.GetMigrationLog(ctx, schema.WithDeleteLog(tt.withDeleteLog))
 			if tt.wantErrMatch != nil {
 				require.Error(err)
 				assert.Truef(errors.Match(tt.wantErrMatch, err), "expected error with code: %s and got err: %q", tt.wantErrMatch.Code, err)
@@ -328,22 +371,4 @@ func Test_GetMigrationLog(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Creates a new migrationState only with the versions <= the provided maxVer
-func createPartialMigrationState(om migrationState, maxVer int) migrationState {
-	nState := migrationState{
-		upMigrations: make(map[int][]byte),
-	}
-	for k := range om.upMigrations {
-		if k > maxVer {
-			// Don't store any versions past our test version.
-			continue
-		}
-		nState.upMigrations[k] = om.upMigrations[k]
-		if nState.binarySchemaVersion < k {
-			nState.binarySchemaVersion = k
-		}
-	}
-	return nState
 }
