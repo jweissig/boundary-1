@@ -425,11 +425,15 @@ func (c *Command) Run(args []string) int {
 			return base.CommandCliError
 		}
 		if !ckState.MigrationsApplied() {
-			c.UI.Error(base.WrapAtLength("TODO: construct error message here"))
-			// c.UI.Error(base.WrapAtLength("Database schema must be updated to use this version. Run 'boundary database migrate' to update the database. NOTE: Boundary does not currently support live migration; ensure all controllers are shut down before running the migration command."))
-			//c.UI.Error(base.WrapAtLength(fmt.Sprintf("Newer schema version (%d) "+
-			//	"than this binary expects. Please use a newer version of the boundary "+
-			//	"binary.", ckState.DatabaseSchemaVersion)))
+			for _, e := range ckState.Editions {
+				if e.DatabaseSchemaState == schema.Ahead {
+					c.UI.Error(base.WrapAtLength(fmt.Sprintf("Newer schema version (%s %d) "+
+						"than this binary expects. Please use a newer version of the boundary "+
+						"binary.", e.Name, e.DatabaseSchemaVersion)))
+					return base.CommandCliError
+				}
+			}
+			c.UI.Error(base.WrapAtLength("Database schema must be updated to use this version. Run 'boundary database migrate' to update the database. NOTE: Boundary does not currently support live migration; ensure all controllers are shut down before running the migration command."))
 			return base.CommandCliError
 		}
 		if err := c.verifyKmsSetup(); err != nil {
