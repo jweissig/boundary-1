@@ -32,6 +32,10 @@ select version
 select version from schema_migrations;
 `
 
+	selectPreEditionVersion = `
+select max(version) from boundary_schema_version;
+`
+
 	tablesExist = `
 select table_name from information_schema.tables
  where table_schema =  (select current_schema())

@@ -304,6 +304,19 @@ func (p *Postgres) CurrentState(ctx context.Context, edition string) (version in
 		// no version recorded
 		return nilVersion, initialized, nil
 	case err != nil:
+		// try to query for an edition in the pre-edition version table
+		if edition == "oss" {
+			preEditionErr := p.conn.QueryRowContext(ctx, selectPreEditionVersion).Scan(&version)
+			switch {
+			case preEditionErr == sql.ErrNoRows:
+				return nilVersion, initialized, nil
+			case preEditionErr != nil:
+				// return the original error
+				return nilVersion, initialized, errors.Wrap(ctx, err, op)
+			default:
+				return version, initialized, nil
+			}
+		}
 		return nilVersion, initialized, errors.Wrap(ctx, err, op)
 	default:
 		return version, initialized, nil
