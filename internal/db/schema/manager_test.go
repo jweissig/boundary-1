@@ -98,6 +98,184 @@ func TestCurrentState(t *testing.T) {
 	assert.True(t, s.MigrationsApplied())
 }
 
+func TestApplyMigration(t *testing.T) {
+	tests := []struct {
+		name      string
+		editions  edition.Editions
+		expectErr bool
+		state     *schema.State
+	}{
+		{
+			"oneEdition",
+			edition.Editions{
+				edition.New("one", schema.Postgres, one, 0),
+			},
+			false,
+			&schema.State{
+				Initialized: true,
+				Editions: []schema.EditionState{
+					{
+						Name:                  "one",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: 1,
+						DatabaseSchemaState:   schema.Equal,
+					},
+				},
+			},
+		},
+		{
+			"twoEditions",
+			edition.Editions{
+				edition.New("one", schema.Postgres, one, 0),
+				edition.New("two", schema.Postgres, two, 1),
+			},
+			false,
+			&schema.State{
+				Initialized: true,
+				Editions: []schema.EditionState{
+					{
+						Name:                  "one",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: 1,
+						DatabaseSchemaState:   schema.Equal,
+					},
+					{
+						Name:                  "two",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: 1,
+						DatabaseSchemaState:   schema.Equal,
+					},
+				},
+			},
+		},
+		{
+			"twoEditionsIncorrectPriority",
+			edition.Editions{
+				edition.New("one", schema.Postgres, one, 1),
+				edition.New("two", schema.Postgres, two, 0),
+			},
+			true,
+			&schema.State{
+				Initialized: false,
+				Editions: []schema.EditionState{
+					{
+						Name:                  "one",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: schema.NilVersion,
+						DatabaseSchemaState:   schema.Behind,
+					},
+					{
+						Name:                  "two",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: schema.NilVersion,
+						DatabaseSchemaState:   schema.Behind,
+					},
+				},
+			},
+		},
+		{
+			"threeEditions",
+			edition.Editions{
+				edition.New("one", schema.Postgres, one, 0),
+				edition.New("two", schema.Postgres, two, 1),
+				edition.New("three", schema.Postgres, three, 2),
+			},
+			false,
+			&schema.State{
+				Initialized: true,
+				Editions: []schema.EditionState{
+					{
+						Name:                  "one",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: 1,
+						DatabaseSchemaState:   schema.Equal,
+					},
+					{
+						Name:                  "two",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: 1,
+						DatabaseSchemaState:   schema.Equal,
+					},
+					{
+						Name:                  "three",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: 1,
+						DatabaseSchemaState:   schema.Equal,
+					},
+				},
+			},
+		},
+		{
+			"threeEditionsIncorrectPriority",
+			edition.Editions{
+				edition.New("one", schema.Postgres, one, 0),
+				edition.New("two", schema.Postgres, two, 2),
+				edition.New("three", schema.Postgres, three, 1),
+			},
+			true,
+			&schema.State{
+				Initialized: false,
+				Editions: []schema.EditionState{
+					{
+						Name:                  "one",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: schema.NilVersion,
+						DatabaseSchemaState:   schema.Behind,
+					},
+					{
+						Name:                  "two",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: schema.NilVersion,
+						DatabaseSchemaState:   schema.Behind,
+					},
+					{
+						Name:                  "three",
+						BinarySchemaVersion:   1,
+						DatabaseSchemaVersion: schema.NilVersion,
+						DatabaseSchemaState:   schema.Behind,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dialect := dbtest.Postgres
+
+			c, u, _, err := dbtest.StartUsingTemplate(dialect, dbtest.WithTemplate(dbtest.Template1))
+			t.Cleanup(func() {
+				if err := c(); err != nil {
+					t.Fatalf("Got error at cleanup: %v", err)
+				}
+			})
+			require.NoError(t, err)
+			ctx := context.Background()
+			d, err := sql.Open(dialect, u)
+			require.NoError(t, err)
+
+			m, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(tt.editions))
+			require.NoError(t, err)
+			if tt.expectErr {
+				assert.Error(t, m.ApplyMigrations(ctx))
+			} else {
+				assert.NoError(t, m.ApplyMigrations(ctx))
+			}
+
+			s, err := m.CurrentState(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, tt.state.Initialized, s.Initialized)
+			assert.ElementsMatch(t, tt.state.Editions, s.Editions)
+
+			if tt.expectErr {
+				assert.False(t, s.MigrationsApplied())
+			} else {
+				assert.True(t, s.MigrationsApplied())
+			}
+		})
+	}
+}
+
 func TestApplyMigration_canceledContext(t *testing.T) {
 	dialect := dbtest.Postgres
 
