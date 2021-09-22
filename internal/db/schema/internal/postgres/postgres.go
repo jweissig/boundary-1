@@ -360,6 +360,7 @@ func (p *Postgres) EnsureVersionTable(ctx context.Context) error {
 	alterations := []string{
 		dropDirtyColumn,
 		addEditionColumn,
+		setVersionNotNull,
 	}
 
 	for _, a := range alterations {

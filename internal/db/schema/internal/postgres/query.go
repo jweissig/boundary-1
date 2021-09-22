@@ -76,6 +76,10 @@ alter table boundary_schema_version drop constraint if exists schema_migrations_
 alter table boundary_schema_version drop constraint if exists boundary_schema_version_pkey;
 alter table boundary_schema_version add primary key (edition);
 `
+	setVersionNotNull = `
+alter table boundary_schema_version
+	alter column version set not null;
+`
 )
 
 // Quries for interacting with migration logs table

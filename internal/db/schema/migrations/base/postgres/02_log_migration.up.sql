@@ -7,7 +7,7 @@ create table log_migration(
   entry             text   not null
 );
 comment on table log_migration is
-'log_migration entries are logging output from databaes migrations';
+'log_migration entries are logging output from database migrations';
 
 create or replace function
   log_migration_version()
