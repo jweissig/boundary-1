@@ -1,3 +1,6 @@
+// Package provider provides an interator for interating over all of the
+// migration statements that need to be applied. It will provide the statements
+// in the correct order based on the Edition priority and migration version.
 package provider
 
 import (
@@ -15,7 +18,6 @@ type migration struct {
 }
 
 // Provider provides the migrations to the schema.Manager in the correct order.
-// It will order the migrations based on edition priority and the migrtaion version.
 type Provider struct {
 	pos        int
 	migrations []migration
@@ -25,7 +27,8 @@ type Provider struct {
 type DatabaseState map[string]int
 
 // New creates a Provider. The given DatabaseState is compared against the editions
-// to determine which migrations need to be applied and the migrations are then ordered.
+// to determine which migrations need to be applied and the migrations are then ordered
+// based on the Edition priority and by the migration version.
 func New(dbState DatabaseState, editions edition.Editions) *Provider {
 	m := &Provider{
 		pos: -1,

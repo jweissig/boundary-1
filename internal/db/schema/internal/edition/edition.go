@@ -1,3 +1,5 @@
+// Package edition provides internal structs for the schema package for
+// defining and organizing database migration editions.
 package edition
 
 import (
@@ -14,7 +16,7 @@ import (
 // a specific SQL server implementation.
 type Dialect string
 
-// Edition is a collection of migration ddl statements along with migration versions.
+// Edition is a collection of sql statements along with a version number.
 // It is used to apply changes to the database instance.
 type Edition struct {
 	Name    string
@@ -41,7 +43,7 @@ func (e Editions) Sort() {
 	})
 }
 
-// New creates an Edition with the provided parmeters. The embed.FS m will be
+// New creates an Edition with the provided parameters. The embed.FS m will be
 // walked to extract the sql statements. The priority is used to determine
 // when this Edition's migrations are applied relative to other Editions. A
 // lower number indicates a higher priority. New will panic if the structure

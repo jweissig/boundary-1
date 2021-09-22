@@ -1,3 +1,6 @@
+// Package migrations contains the base sql statements needed to bootstrap the
+// migration process. These statements setup the tables necessary for tracking
+// the state of migrations.
 package migrations
 
 import (
