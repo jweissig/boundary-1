@@ -1,4 +1,4 @@
-package schema_test
+package oss_test
 
 import (
 	"context"

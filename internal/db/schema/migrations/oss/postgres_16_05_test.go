@@ -1,12 +1,13 @@
-package schema_test
+package oss_test
 
 import (
 	"context"
 	"database/sql"
 	"testing"
 
-	"github.com/hashicorp/boundary/internal/auth/oidc"
 	"github.com/hashicorp/boundary/internal/authtoken"
+	"github.com/hashicorp/boundary/internal/credential"
+	"github.com/hashicorp/boundary/internal/credential/vault"
 	"github.com/hashicorp/boundary/internal/db"
 	"github.com/hashicorp/boundary/internal/db/schema"
 	"github.com/hashicorp/boundary/internal/host/static"
@@ -21,10 +22,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMigrations_UserDimension(t *testing.T) {
+func TestMigrations_CredentialDimension(t *testing.T) {
 	const (
-		priorMigration   = 13001
-		currentMigration = 14001
+		priorMigration   = 15002
+		currentMigration = 16005
 	)
 
 	t.Parallel()
@@ -104,15 +105,17 @@ func TestMigrations_UserDimension(t *testing.T) {
 	{
 		at := testOidcAuthToken(t, conn, kmsCache, databaseWrapper, org.GetPublicId())
 		uId := at.GetIamUserId()
+		creds := testSessionCredentialParams(t, conn, kmsCache, wrapper, tar)
 
 		sess := session.TestSession(t, conn, wrapper, session.ComposedOf{
-			UserId:      uId,
-			HostId:      h.GetPublicId(),
-			TargetId:    tar.GetPublicId(),
-			HostSetId:   hs.GetPublicId(),
-			AuthTokenId: at.GetPublicId(),
-			ScopeId:     prj.GetPublicId(),
-			Endpoint:    "tcp://127.0.0.1:22",
+			UserId:             uId,
+			HostId:             h.GetPublicId(),
+			TargetId:           tar.GetPublicId(),
+			HostSetId:          hs.GetPublicId(),
+			AuthTokenId:        at.GetPublicId(),
+			ScopeId:            prj.GetPublicId(),
+			Endpoint:           "tcp://127.0.0.1:22",
+			DynamicCredentials: creds,
 		})
 		sessions = append(sessions, sess)
 	}
@@ -138,7 +141,6 @@ func TestMigrations_UserDimension(t *testing.T) {
 
 	assert.NoError(m.ApplyMigrations(ctx))
 	state, err = m.CurrentState(ctx)
-	require.NoError(err)
 	want = &schema.State{
 		Initialized: true,
 		Editions: []schema.EditionState{
@@ -153,29 +155,22 @@ func TestMigrations_UserDimension(t *testing.T) {
 	require.Equal(want, state)
 }
 
-func testOidcAuthToken(t *testing.T, conn *gorm.DB, kms *kms.Kms, wrapper wrapping.Wrapper, scopeId string) *authtoken.AuthToken {
+func testSessionCredentialParams(t *testing.T, conn *gorm.DB, kms *kms.Kms, wrapper wrapping.Wrapper, tar *target.TcpTarget) []*session.DynamicCredential {
 	t.Helper()
-
-	authMethod := oidc.TestAuthMethod(
-		t, conn, wrapper, scopeId, oidc.ActivePrivateState,
-		"alice-rp", "fido",
-		oidc.WithIssuer(oidc.TestConvertToUrls(t, "https://www.alice.com")[0]),
-		oidc.WithSigningAlgs(oidc.RS256),
-		oidc.WithApiUrl(oidc.TestConvertToUrls(t, "https://www.alice.com/callback")[0]),
-	)
-	acct := oidc.TestAccount(t, conn, authMethod, "test-subject")
+	rw := db.New(conn)
 
 	ctx := context.Background()
-	rw := db.New(conn)
-	iamRepo, err := iam.NewRepository(rw, rw, kms)
-	require.NoError(t, err)
+	stores := vault.TestCredentialStores(t, conn, wrapper, tar.ScopeId, 1)
+	libs := vault.TestCredentialLibraries(t, conn, wrapper, stores[0].GetPublicId(), 2)
 
-	u := iam.TestUser(t, iamRepo, scopeId, iam.WithAccountIds(acct.PublicId))
-
-	repo, err := authtoken.NewRepository(rw, rw, kms)
+	targetRepo, err := target.NewRepository(rw, rw, kms)
 	require.NoError(t, err)
-
-	at, err := repo.CreateAuthToken(ctx, u, acct.GetPublicId())
+	_, _, _, err = targetRepo.AddTargetCredentialSources(ctx, tar.GetPublicId(), tar.GetVersion(), []string{libs[0].PublicId, libs[1].PublicId})
 	require.NoError(t, err)
-	return at
+	creds := []*session.DynamicCredential{
+		session.NewDynamicCredential(libs[0].GetPublicId(), credential.ApplicationPurpose),
+		session.NewDynamicCredential(libs[0].GetPublicId(), credential.IngressPurpose),
+		session.NewDynamicCredential(libs[1].GetPublicId(), credential.EgressPurpose),
+	}
+	return creds
 }
