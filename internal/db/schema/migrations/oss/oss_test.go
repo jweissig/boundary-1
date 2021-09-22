@@ -45,7 +45,7 @@ func TestApplyMigrations_NotFromFresh(t *testing.T) {
 	// Initialize the DB with only a portion of the current sql scripts.
 	ctx := context.Background()
 	m, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
-		schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": 1}),
+		schema.TestCreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": 1}),
 	))
 	require.NoError(t, err)
 	assert.NoError(t, m.ApplyMigrations(ctx))
@@ -66,7 +66,7 @@ func TestApplyMigrations_NotFromFresh(t *testing.T) {
 	assert.Equal(t, want, state)
 
 	newM, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
-		schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": 3}),
+		schema.TestCreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": 3}),
 	))
 	require.NoError(t, err)
 	assert.NoError(t, newM.ApplyMigrations(ctx))

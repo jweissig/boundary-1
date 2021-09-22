@@ -42,7 +42,7 @@ func TestMigrations_UserDimension(t *testing.T) {
 
 	// migration to the prior migration (before the one we want to test)
 	m, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
-		schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": priorMigration}),
+		schema.TestCreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": priorMigration}),
 	))
 	require.NoError(err)
 
@@ -132,7 +132,7 @@ func TestMigrations_UserDimension(t *testing.T) {
 
 	// now we're ready for the migration we want to test.
 	m, err = schema.NewManager(ctx, dialect, d, schema.WithEditions(
-		schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": currentMigration}),
+		schema.TestCreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": currentMigration}),
 	))
 	require.NoError(err)
 

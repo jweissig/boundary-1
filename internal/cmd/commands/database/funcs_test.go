@@ -54,7 +54,7 @@ func TestMigrateDatabase(t *testing.T) {
 
 				earlyMigrationVersion := 2000
 				man, err := schema.NewManager(ctx, dialect, dBase, schema.WithEditions(
-					schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": earlyMigrationVersion}),
+					schema.TestCreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": earlyMigrationVersion}),
 				))
 				require.NoError(t, err)
 				require.NoError(t, man.ApplyMigrations(ctx))
@@ -78,7 +78,7 @@ func TestMigrateDatabase(t *testing.T) {
 
 				earlyMigrationVersion := 2000
 				man, err := schema.NewManager(ctx, dialect, dBase, schema.WithEditions(
-					schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": earlyMigrationVersion}),
+					schema.TestCreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": earlyMigrationVersion}),
 				))
 				require.NoError(t, err)
 				require.NoError(t, man.ApplyMigrations(ctx))

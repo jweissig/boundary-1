@@ -56,7 +56,7 @@ func Test_ServerEnumChanges(t *testing.T) {
 
 	// migration to the prior migration (before the one we want to test)
 	m, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
-		schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": priorMigration}),
+		schema.TestCreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": priorMigration}),
 	))
 	require.NoError(err)
 
@@ -82,7 +82,7 @@ func Test_ServerEnumChanges(t *testing.T) {
 
 	// now we're ready for the migration we want to test.
 	m, err = schema.NewManager(ctx, dialect, d, schema.WithEditions(
-		schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": serverEnumMigration}),
+		schema.TestCreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": serverEnumMigration}),
 	))
 	require.NoError(err)
 

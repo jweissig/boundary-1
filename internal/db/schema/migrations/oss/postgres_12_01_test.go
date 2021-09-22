@@ -46,7 +46,7 @@ func testSetupDb(ctx context.Context, t *testing.T) *sql.DB {
 	require.NoError(err)
 
 	m, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
-		schema.CreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": targetMigration}),
+		schema.TestCreatePartialEditions(schema.Dialect(dialect), schema.PartialEditions{"oss": targetMigration}),
 	))
 	require.NoError(err)
 

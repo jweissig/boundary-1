@@ -12,7 +12,7 @@ func Test_GetOpts(t *testing.T) {
 
 	t.Run("WithEditions", func(t *testing.T) {
 		assert := assert.New(t)
-		editions := CreatePartialEditions(Postgres, PartialEditions{"oss": 1})
+		editions := TestCreatePartialEditions(Postgres, PartialEditions{"oss": 1})
 		opts := getOpts(WithEditions(editions))
 		assert.Equal(opts.withEditions, editions)
 	})

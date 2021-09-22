@@ -2,12 +2,12 @@ package schema
 
 import "github.com/hashicorp/boundary/internal/db/schema/internal/edition"
 
-// PartialEditions is used by CreatePartialEditions. It is a map of edition
+// PartialEditions is used by TestCreatePartialEditions. It is a map of edition
 // names to the max version that should be included.
 type PartialEditions map[string]int
 
-// CreatePartialEditions is used by tests to create a subset of the Edition migrations.
-func CreatePartialEditions(dialect Dialect, p PartialEditions) edition.Editions {
+// TestCreatePartialEditions is used by tests to create a subset of the Edition migrations.
+func TestCreatePartialEditions(dialect Dialect, p PartialEditions) edition.Editions {
 	e := make(edition.Editions, 0, len(p))
 	for _, ee := range editions[dialect] {
 		maxVer, ok := p[ee.Name]
