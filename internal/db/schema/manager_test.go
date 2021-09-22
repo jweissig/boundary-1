@@ -55,7 +55,7 @@ func TestCurrentState(t *testing.T) {
 	require.NoError(t, err)
 
 	m, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
-		[]edition.Edition{
+		edition.Editions{
 			{
 				Name:          "oss",
 				Dialect:       schema.Postgres,
@@ -207,7 +207,7 @@ func TestApplyMigrations_BadSQL(t *testing.T) {
 	// Initialize the DB with only a portion of the current sql scripts.
 	ctx := context.Background()
 	m, err := schema.NewManager(ctx, dialect, d, schema.WithEditions(
-		[]edition.Edition{
+		edition.Editions{
 			{
 				Name:          "oss",
 				Dialect:       schema.Postgres,

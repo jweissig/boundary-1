@@ -54,7 +54,7 @@ type Manager struct {
 	db       *sql.DB
 	driver   driver
 	dialect  string
-	editions []edition.Edition
+	editions edition.Editions
 }
 
 // NewManager creates a new schema manager. An error is returned

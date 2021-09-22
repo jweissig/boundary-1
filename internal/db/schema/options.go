@@ -16,7 +16,7 @@ type Option func(*options)
 
 // options = how options are represented
 type options struct {
-	withEditions  []edition.Edition
+	withEditions  edition.Editions
 	withDeleteLog bool
 }
 
@@ -25,7 +25,7 @@ func getDefaultOptions() options {
 }
 
 // WithEditions provides an optional migration states.
-func WithEditions(editions []edition.Edition) Option {
+func WithEditions(editions edition.Editions) Option {
 	return func(o *options) {
 		o.withEditions = editions
 	}

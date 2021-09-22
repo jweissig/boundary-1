@@ -7,8 +7,8 @@ import "github.com/hashicorp/boundary/internal/db/schema/internal/edition"
 type PartialEditions map[string]int
 
 // CreatePartialEditions is used by tests to create a subset of the Edition migrations.
-func CreatePartialEditions(dialect Dialect, p PartialEditions) []edition.Edition {
-	e := make([]edition.Edition, 0, len(p))
+func CreatePartialEditions(dialect Dialect, p PartialEditions) edition.Editions {
+	e := make(edition.Editions, 0, len(p))
 	for _, ee := range editions[dialect] {
 		maxVer, ok := p[ee.Name]
 		if ok {

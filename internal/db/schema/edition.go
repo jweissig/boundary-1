@@ -19,7 +19,7 @@ var supportedDialects = map[Dialect]struct{}{
 	Postgres: struct{}{},
 }
 
-type dialects map[Dialect][]edition.Edition
+type dialects map[Dialect]edition.Editions
 
 var editions = make(dialects)
 
