@@ -1,6 +1,6 @@
 // Package schema is used to apply sql migrations to modify the state of a
 // database instance.  It also provides functionality to report on the state of
-// a database instance and how it compares with the migration editons in the
+// a database instance and how it compares with the migration editions in the
 // running binary.
 //
 // This package requires that the migration editions are first registered,

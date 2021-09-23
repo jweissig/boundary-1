@@ -1,4 +1,4 @@
-// Package provider provides an interator for interating over all of the
+// Package provider provides an iterator for iterating over all of the
 // migration statements that need to be applied. It will provide the statements
 // in the correct order based on the Edition priority and migration version.
 package provider
@@ -68,7 +68,7 @@ func New(dbState DatabaseState, editions edition.Editions) *Provider {
 	return m
 }
 
-// Next procecceds to the next migration. It returns true on success or false
+// Next proceeds to the next migration. It returns true on success or false
 // if there are no more migrations.
 func (p *Provider) Next() bool {
 	p.pos++
